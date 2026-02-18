@@ -11,6 +11,22 @@ struct Vec3 {
 struct DetectorNode {
     int id;
     Vec3 coords;
+    bool is_x_type = false;  // X-type vs Z-type stabilizer
+};
+
+struct StabilizerFace {
+    Vec3 center;           // spatial position (x, y) from DEM coords
+    float half_w = 1.0f;   // half-width in x
+    float half_h = 1.0f;   // half-height in y
+    bool is_x_type = false;
+};
+
+struct LatticeInfo {
+    std::vector<Vec3> data_qubits;           // positions at odd integer coords
+    std::vector<StabilizerFace> faces;       // stabilizer face rectangles
+    float min_x = 0, max_x = 0;
+    float min_y = 0, max_y = 0;
+    bool valid = false;
 };
 
 struct GraphEdge {
@@ -33,6 +49,9 @@ struct DecodingGraph3D {
     // 3D layout
     std::vector<Vec3> node_positions;   // all nodes (detectors first, then boundary)
     int num_rounds = 1;
+
+    // Lattice geometry inferred from detector coordinates
+    LatticeInfo lattice;
 };
 
 DecodingGraph3D parse_dem_file(const std::string& filepath);

@@ -10,7 +10,8 @@ UI::UI(const std::string& dem_path, const std::string& events_path)
       step_interval_(0.5f),
       auto_stepping_(false),
       show_time_planes_(true),
-      show_graph_edges_(true)
+      show_graph_edges_(true),
+      show_lattice_underlay_(true)
 {
     graph_ = parse_dem_file(dem_path);
     syndrome_ = load_detection_events(events_path, graph_.num_detectors);
@@ -29,6 +30,7 @@ void UI::handle_input() {
     // Toggle visibility
     if (IsKeyPressed(KEY_ONE)) show_time_planes_ = !show_time_planes_;
     if (IsKeyPressed(KEY_TWO)) show_graph_edges_ = !show_graph_edges_;
+    if (IsKeyPressed(KEY_THREE)) show_lattice_underlay_ = !show_lattice_underlay_;
 
     // R: reset
     if (IsKeyPressed(KEY_R)) {

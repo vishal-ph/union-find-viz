@@ -294,6 +294,15 @@ DecodingGraph3D parse_dem_file(const std::string& filepath) {
         ctx.detectors.end());
 
     graph.num_detectors = (int)ctx.detectors.size();
+
+    // Classify X/Z type based on Stim coordinate parity:
+    // (int(x/2) + int(y/2)) % 2 == 1 → X-type, == 0 → Z-type
+    for (auto& det : ctx.detectors) {
+        int ix = (int)(det.coords.x / 2.0f);
+        int iy = (int)(det.coords.y / 2.0f);
+        det.is_x_type = ((ix + iy) % 2 == 1);
+    }
+
     graph.detectors = ctx.detectors;
 
     // Build a map from detector absolute id to index in [0, num_detectors)
@@ -385,6 +394,77 @@ DecodingGraph3D parse_dem_file(const std::string& filepath) {
         max_z = std::max(max_z, det.coords.z);
     }
     graph.num_rounds = std::max(1, (int)(max_z + 1));
+
+    // Infer lattice geometry from detector spatial coordinates
+    {
+        // Collect unique spatial positions
+        std::set<std::pair<int,int>> spatial_set;
+        float smin_x = 1e9f, smax_x = -1e9f;
+        float smin_y = 1e9f, smax_y = -1e9f;
+        for (auto& det : graph.detectors) {
+            int sx = (int)std::round(det.coords.x);
+            int sy = (int)std::round(det.coords.y);
+            spatial_set.insert({sx, sy});
+            smin_x = std::min(smin_x, (float)sx);
+            smax_x = std::max(smax_x, (float)sx);
+            smin_y = std::min(smin_y, (float)sy);
+            smax_y = std::max(smax_y, (float)sy);
+        }
+
+        if (!spatial_set.empty()) {
+            LatticeInfo& lat = graph.lattice;
+            lat.min_x = smin_x;
+            lat.max_x = smax_x;
+            lat.min_y = smin_y;
+            lat.max_y = smax_y;
+
+            // Data qubits: odd integer coordinates within bounding box expanded by 1
+            int bb_x0 = (int)smin_x - 1;
+            int bb_x1 = (int)smax_x + 1;
+            int bb_y0 = (int)smin_y - 1;
+            int bb_y1 = (int)smax_y + 1;
+            for (int qx = bb_x0; qx <= bb_x1; qx++) {
+                for (int qy = bb_y0; qy <= bb_y1; qy++) {
+                    if (qx % 2 != 0 && qy % 2 != 0) {
+                        lat.data_qubits.push_back({(float)qx, (float)qy, 0.0f});
+                    }
+                }
+            }
+
+            // Stabilizer faces: one per unique spatial detector position
+            for (auto& sp : spatial_set) {
+                StabilizerFace face;
+                face.center = {(float)sp.first, (float)sp.second, 0.0f};
+                // Classify same way as detectors
+                int ix = sp.first / 2;
+                int iy = sp.second / 2;
+                face.is_x_type = ((ix + iy) % 2 == 1);
+
+                // Check if on boundary → make a half-face
+                bool on_left   = (sp.first  == (int)smin_x);
+                bool on_right  = (sp.first  == (int)smax_x);
+                bool on_bottom = (sp.second == (int)smin_y);
+                bool on_top    = (sp.second == (int)smax_y);
+
+                face.half_w = 1.0f;
+                face.half_h = 1.0f;
+
+                // For boundary stabilizers, shrink to half-face
+                if (on_left || on_right) face.half_w = 0.5f;
+                if (on_bottom || on_top) face.half_h = 0.5f;
+
+                // Shift center for boundary half-faces so they align to lattice edge
+                if (on_left)   face.center.x += 0.5f;
+                if (on_right)  face.center.x -= 0.5f;
+                if (on_bottom) face.center.y += 0.5f;
+                if (on_top)    face.center.y -= 0.5f;
+
+                lat.faces.push_back(face);
+            }
+
+            lat.valid = true;
+        }
+    }
 
     return graph;
 }

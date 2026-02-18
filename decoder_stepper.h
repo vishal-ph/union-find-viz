@@ -12,8 +12,15 @@ enum class DecoderPhase {
     DONE
 };
 
+enum class SyndromeSubPhase {
+    GROW,
+    MERGE,
+    DEACTIVATE
+};
+
 struct DecoderSnapshot {
     DecoderPhase phase = DecoderPhase::IDLE;
+    SyndromeSubPhase syndrome_sub_phase = SyndromeSubPhase::GROW;
     int cycle_number = 0;
 
     // Phase 1: syndrome validation
@@ -55,6 +62,7 @@ private:
     std::vector<std::vector<int>> graph_edge_idxs_;
 
     DecoderSnapshot snapshot_;
+    SyndromeSubPhase syndrome_sub_phase_;
 
     // Spanning forest construction state
     int sf_current_cluster_;

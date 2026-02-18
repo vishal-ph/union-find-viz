@@ -27,6 +27,7 @@ public:
     std::string mode_text() const;
     bool show_time_planes() const { return show_time_planes_; }
     bool show_graph_edges() const { return show_graph_edges_; }
+    bool show_lattice_underlay() const { return show_lattice_underlay_; }
 
 private:
     AppMode mode_;
@@ -40,6 +41,7 @@ private:
 
     bool show_time_planes_;
     bool show_graph_edges_;
+    bool show_lattice_underlay_;
 
     void start_decoding();
     void step_decoder();

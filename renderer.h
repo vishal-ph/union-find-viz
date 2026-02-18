@@ -20,7 +20,8 @@ public:
         const std::string& status_text,
         const std::string& mode_text,
         bool show_time_planes,
-        bool show_graph_edges
+        bool show_graph_edges,
+        bool show_lattice_underlay
     );
 
     void update_camera();
@@ -48,12 +49,14 @@ private:
 
     // 3D rendering layers
     void render_time_planes(const DecodingGraph3D& graph);
+    void render_lattice_underlay(const DecodingGraph3D& graph);
     void render_graph_edges(const DecodingGraph3D& graph, bool dim);
     void render_detector_nodes(const DecodingGraph3D& graph, const std::vector<int>& syndrome,
                                const DecoderSnapshot* snapshot);
     void render_boundary_nodes(const DecodingGraph3D& graph);
 
     // Decoder visualization layers
+    void render_cluster_sheaths(const DecodingGraph3D& graph, const DecoderSnapshot& snap);
     void render_cluster_regions(const DecodingGraph3D& graph, const DecoderSnapshot& snap);
     void render_cluster_edges(const DecodingGraph3D& graph, const DecoderSnapshot& snap);
     void render_spanning_forest(const DecodingGraph3D& graph, const DecoderSnapshot& snap);

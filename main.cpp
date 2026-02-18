@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
         renderer.update_camera();
 
         BeginDrawing();
-        ClearBackground(Color{20, 20, 30, 255});
+        ClearBackground(Color{245, 245, 248, 255});
 
         renderer.render(
             ui.graph(),
@@ -38,7 +38,8 @@ int main(int argc, char** argv) {
             ui.status_text(),
             ui.mode_text(),
             ui.show_time_planes(),
-            ui.show_graph_edges()
+            ui.show_graph_edges(),
+            ui.show_lattice_underlay()
         );
 
         EndDrawing();

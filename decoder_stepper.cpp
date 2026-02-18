@@ -6,6 +6,7 @@ DecoderStepper::DecoderStepper(
     const std::vector<int>& boundary_nodes,
     const std::vector<int>& syndrome)
     : edges_(edges), boundary_nodes_(boundary_nodes), syndrome_(syndrome),
+      syndrome_sub_phase_(SyndromeSubPhase::GROW),
       sf_current_cluster_(0), peel_current_tree_(0), peel_state_(nullptr)
 {
     n_edges_ = (int)edges_.size();
@@ -26,6 +27,8 @@ DecoderStepper::DecoderStepper(
 void DecoderStepper::init_syndrome_validation() {
     snapshot_.phase = DecoderPhase::SYNDROME_VALIDATION;
     snapshot_.cycle_number = 0;
+    syndrome_sub_phase_ = SyndromeSubPhase::GROW;
+    snapshot_.syndrome_sub_phase = SyndromeSubPhase::GROW;
 
     snapshot_.clusters_nodes.assign(n_clusters_, std::vector<int>(n_nodes_, 0));
     snapshot_.clusters_edges.assign(n_clusters_, std::vector<int>(n_edges_, 0));
@@ -123,22 +126,47 @@ bool DecoderStepper::step() {
 }
 
 bool DecoderStepper::step_syndrome_validation() {
-    // Run one grow-merge-deactivate cycle
-    std::tie(snapshot_.clusters_nodes,
-             snapshot_.clusters_edges,
-             snapshot_.clusters_activity) =
-        syndrome_validation_cycle(
-            snapshot_.clusters_nodes,
-            snapshot_.clusters_edges,
-            snapshot_.clusters_activity,
-            graph_edge_idxs_,
-            edges_,
-            boundary_nodes_);
+    switch (syndrome_sub_phase_) {
+        case SyndromeSubPhase::GROW: {
+            std::tie(snapshot_.clusters_nodes,
+                     snapshot_.clusters_edges) =
+                grow_clusters(
+                    snapshot_.clusters_nodes,
+                    snapshot_.clusters_edges,
+                    snapshot_.clusters_activity,
+                    graph_edge_idxs_,
+                    edges_);
+            syndrome_sub_phase_ = SyndromeSubPhase::MERGE;
+            snapshot_.syndrome_sub_phase = SyndromeSubPhase::MERGE;
+            break;
+        }
+        case SyndromeSubPhase::MERGE: {
+            std::tie(snapshot_.clusters_nodes,
+                     snapshot_.clusters_edges,
+                     snapshot_.clusters_activity) =
+                find_and_merge_clusters(
+                    snapshot_.clusters_nodes,
+                    snapshot_.clusters_edges,
+                    snapshot_.clusters_activity);
+            syndrome_sub_phase_ = SyndromeSubPhase::DEACTIVATE;
+            snapshot_.syndrome_sub_phase = SyndromeSubPhase::DEACTIVATE;
+            break;
+        }
+        case SyndromeSubPhase::DEACTIVATE: {
+            snapshot_.clusters_activity =
+                deactivate_clusters_touching_boundary(
+                    snapshot_.clusters_nodes,
+                    snapshot_.clusters_activity,
+                    boundary_nodes_);
+            snapshot_.cycle_number++;
+            syndrome_sub_phase_ = SyndromeSubPhase::GROW;
+            snapshot_.syndrome_sub_phase = SyndromeSubPhase::GROW;
 
-    snapshot_.cycle_number++;
-
-    if (!has_active_clusters()) {
-        init_spanning_forest();
+            if (!has_active_clusters()) {
+                init_spanning_forest();
+            }
+            break;
+        }
     }
     return true;
 }
