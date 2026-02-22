@@ -5,20 +5,34 @@ DecoderStepper::DecoderStepper(
     const std::vector<std::vector<int>>& edges,
     const std::vector<int>& boundary_nodes,
     const std::vector<int>& syndrome)
-    : edges_(edges), boundary_nodes_(boundary_nodes), syndrome_(syndrome),
+    : boundary_nodes_(boundary_nodes), syndrome_(syndrome),
       syndrome_sub_phase_(SyndromeSubPhase::GROW),
-      sf_current_cluster_(0), peel_current_tree_(0), peel_state_(nullptr)
+      sf_current_cluster_(0), peel_current_tree_(0)
 {
+    // Convert edges from vector<vector<int>> to vector<array<int,2>>
+    edges_.resize(edges.size());
+    for (int i = 0; i < (int)edges.size(); i++) {
+        edges_[i] = {edges[i][0], edges[i][1]};
+    }
+
     n_edges_ = (int)edges_.size();
     n_clusters_ = (int)syndrome_.size();
     n_nodes_ = n_clusters_ + (int)boundary_nodes_.size();
 
-    // Build graph edge index adjacency matrix
-    graph_edge_idxs_.assign(n_nodes_, std::vector<int>(n_nodes_, -1));
+    // Build adjacency matrix (used by grow_clusters)
+    adjacency_.assign(n_nodes_, std::vector<int>(n_nodes_, -1));
     for (int i = 0; i < n_edges_; i++) {
         int n0 = edges_[i][0], n1 = edges_[i][1];
-        graph_edge_idxs_[n0][n1] = i;
-        graph_edge_idxs_[n1][n0] = i;
+        adjacency_[n0][n1] = i;
+        adjacency_[n1][n0] = i;
+    }
+
+    // Build adjacency list (used by build_spanning_tree)
+    adj_list_.resize(n_nodes_);
+    for (int i = 0; i < n_edges_; i++) {
+        int n0 = edges_[i][0], n1 = edges_[i][1];
+        adj_list_[n0].emplace_back(n1, i);
+        adj_list_[n1].emplace_back(n0, i);
     }
 
     init_syndrome_validation();
@@ -40,7 +54,6 @@ void DecoderStepper::init_syndrome_validation() {
 
     snapshot_.edge_corrections.assign(n_edges_, 0);
 
-    // If no active clusters, skip directly to spanning forest
     if (!has_active_clusters()) {
         init_spanning_forest();
     }
@@ -69,37 +82,41 @@ void DecoderStepper::init_forest_peeling() {
     peel_current_tree_ = 0;
     snapshot_.edge_corrections.assign(n_edges_, 0);
 
-    if (peel_state_) {
-        delete peel_state_;
-        peel_state_ = nullptr;
+    // Initialize defects: syndrome extended to all nodes (boundary defects = 0)
+    peel_defects_.assign(n_nodes_, 0);
+    for (int i = 0; i < (int)syndrome_.size(); i++) {
+        peel_defects_[i] = syndrome_[i];
     }
 
-    // Find first non-empty tree
+    // Find first non-empty tree and build its leaf stack
+    advance_to_next_nonempty_tree();
+}
+
+void DecoderStepper::advance_to_next_nonempty_tree() {
     while (peel_current_tree_ < n_clusters_) {
-        bool has_content = std::any_of(
-            snapshot_.spanning_forest[peel_current_tree_].begin(),
-            snapshot_.spanning_forest[peel_current_tree_].end(),
-            [](int v) { return v != -2; });
-        if (has_content) break;
+        const auto& tree = snapshot_.spanning_forest[peel_current_tree_];
+        const auto& access = snapshot_.forest_access[peel_current_tree_];
+        // Build leaf stack: nodes with tree_access==1 and tree!=-1 (non-root leaves)
+        peel_leaf_stack_.clear();
+        for (int i = 0; i < n_nodes_; i++) {
+            if (access[i] == 1 && tree[i] != -1) {
+                peel_leaf_stack_.push_back(i);
+            }
+        }
+        if (!peel_leaf_stack_.empty()) return; // found a tree with leaves
+
+        // Also check if tree has any content at all (e.g. single root node)
+        bool has_content = false;
+        for (int i = 0; i < n_nodes_; i++) {
+            if (tree[i] != -2) { has_content = true; break; }
+        }
+        if (has_content) return; // tree with root only — no peeling needed but still valid
+
         peel_current_tree_++;
     }
 
     if (peel_current_tree_ >= n_clusters_) {
         snapshot_.phase = DecoderPhase::DONE;
-    } else {
-        // Initialize peeling state for current tree
-        // Extend defects to cover all nodes (syndrome + boundary) with boundary = 0
-        std::vector<int> defects(n_nodes_, 0);
-        for (int i = 0; i < (int)syndrome_.size(); i++) {
-            defects[i] = syndrome_[i];
-        }
-        peel_state_ = new State(
-            defects,
-            snapshot_.spanning_forest[peel_current_tree_],
-            snapshot_.forest_access[peel_current_tree_],
-            edges_,
-            snapshot_.edge_corrections
-        );
     }
 }
 
@@ -128,36 +145,30 @@ bool DecoderStepper::step() {
 bool DecoderStepper::step_syndrome_validation() {
     switch (syndrome_sub_phase_) {
         case SyndromeSubPhase::GROW: {
-            std::tie(snapshot_.clusters_nodes,
-                     snapshot_.clusters_edges) =
-                grow_clusters(
-                    snapshot_.clusters_nodes,
-                    snapshot_.clusters_edges,
-                    snapshot_.clusters_activity,
-                    graph_edge_idxs_,
-                    edges_);
+            grow_clusters(
+                snapshot_.clusters_nodes,
+                snapshot_.clusters_edges,
+                snapshot_.clusters_activity,
+                adjacency_,
+                edges_);
             syndrome_sub_phase_ = SyndromeSubPhase::MERGE;
             snapshot_.syndrome_sub_phase = SyndromeSubPhase::MERGE;
             break;
         }
         case SyndromeSubPhase::MERGE: {
-            std::tie(snapshot_.clusters_nodes,
-                     snapshot_.clusters_edges,
-                     snapshot_.clusters_activity) =
-                find_and_merge_clusters(
-                    snapshot_.clusters_nodes,
-                    snapshot_.clusters_edges,
-                    snapshot_.clusters_activity);
+            find_and_merge_clusters(
+                snapshot_.clusters_nodes,
+                snapshot_.clusters_edges,
+                snapshot_.clusters_activity);
             syndrome_sub_phase_ = SyndromeSubPhase::DEACTIVATE;
             snapshot_.syndrome_sub_phase = SyndromeSubPhase::DEACTIVATE;
             break;
         }
         case SyndromeSubPhase::DEACTIVATE: {
-            snapshot_.clusters_activity =
-                deactivate_clusters_touching_boundary(
-                    snapshot_.clusters_nodes,
-                    snapshot_.clusters_activity,
-                    boundary_nodes_);
+            deactivate_clusters_touching_boundary(
+                snapshot_.clusters_nodes,
+                snapshot_.clusters_activity,
+                boundary_nodes_);
             snapshot_.cycle_number++;
             syndrome_sub_phase_ = SyndromeSubPhase::GROW;
             snapshot_.syndrome_sub_phase = SyndromeSubPhase::GROW;
@@ -177,17 +188,13 @@ bool DecoderStepper::step_spanning_forest() {
         return true;
     }
 
-    // Grow tree from this cluster
-    std::tie(snapshot_.spanning_forest[sf_current_cluster_],
-             snapshot_.forest_access[sf_current_cluster_]) =
-        grow_tree_from_cluster(
-            snapshot_.spanning_forest[sf_current_cluster_],
-            snapshot_.forest_access[sf_current_cluster_],
-            snapshot_.clusters_nodes[sf_current_cluster_],
-            snapshot_.clusters_edges[sf_current_cluster_],
-            edges_,
-            graph_edge_idxs_,
-            boundary_nodes_);
+    build_spanning_tree(
+        snapshot_.spanning_forest[sf_current_cluster_],
+        snapshot_.forest_access[sf_current_cluster_],
+        snapshot_.clusters_nodes[sf_current_cluster_],
+        snapshot_.clusters_edges[sf_current_cluster_],
+        adj_list_,
+        boundary_nodes_);
 
     // Advance to next active cluster
     sf_current_cluster_++;
@@ -203,55 +210,29 @@ bool DecoderStepper::step_spanning_forest() {
 }
 
 bool DecoderStepper::step_forest_peeling() {
-    if (!peel_state_ || peel_current_tree_ >= n_clusters_) {
+    if (peel_current_tree_ >= n_clusters_) {
         snapshot_.phase = DecoderPhase::DONE;
         return false;
     }
 
-    // Check if current tree has leaves to peel
-    bool has_leaf = false;
-    for (int i = 0; i < (int)peel_state_->tree_access.size(); i++) {
-        if (peel_state_->tree_access[i] == 1 && peel_state_->tree[i] != -1) {
-            has_leaf = true;
-            break;
-        }
-    }
+    // Try to peel a leaf from the current tree using the leaf stack
+    bool peeled = peel_leaf(
+        peel_defects_,
+        snapshot_.spanning_forest[peel_current_tree_],
+        snapshot_.forest_access[peel_current_tree_],
+        edges_,
+        snapshot_.edge_corrections,
+        peel_leaf_stack_);
 
-    if (has_leaf) {
-        *peel_state_ = tree_peeling_step(*peel_state_);
-        snapshot_.edge_corrections = peel_state_->edge_corrections;
-    } else {
-        // Move to next non-empty tree
-        delete peel_state_;
-        peel_state_ = nullptr;
+    if (!peeled) {
+        // No more leaves — advance to next non-empty tree
         peel_current_tree_++;
-
-        while (peel_current_tree_ < n_clusters_) {
-            bool has_content = std::any_of(
-                snapshot_.spanning_forest[peel_current_tree_].begin(),
-                snapshot_.spanning_forest[peel_current_tree_].end(),
-                [](int v) { return v != -2; });
-            if (has_content) break;
-            peel_current_tree_++;
-        }
+        advance_to_next_nonempty_tree();
 
         if (peel_current_tree_ >= n_clusters_) {
             snapshot_.phase = DecoderPhase::DONE;
             return false;
         }
-
-        // Initialize peeling for next tree with properly sized defects
-        std::vector<int> defects(n_nodes_, 0);
-        for (int i = 0; i < (int)syndrome_.size(); i++) {
-            defects[i] = syndrome_[i];
-        }
-        peel_state_ = new State(
-            defects,
-            snapshot_.spanning_forest[peel_current_tree_],
-            snapshot_.forest_access[peel_current_tree_],
-            edges_,
-            snapshot_.edge_corrections
-        );
     }
 
     return true;
@@ -263,9 +244,5 @@ void DecoderStepper::run_to_completion() {
 
 void DecoderStepper::reset(const std::vector<int>& syndrome) {
     syndrome_ = syndrome;
-    if (peel_state_) {
-        delete peel_state_;
-        peel_state_ = nullptr;
-    }
     init_syndrome_validation();
 }

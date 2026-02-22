@@ -16,15 +16,15 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(raylib)
 
 add_executable(union_find_viz
-    main.cpp
-    union_find.cpp
-    dem_parser.cpp
-    decoder_stepper.cpp
-    renderer.cpp
-    ui.cpp
+    src/main.cpp
+    src/union_find.cpp
+    src/dem_parser.cpp
+    src/decoder_stepper.cpp
+    src/renderer.cpp
+    src/ui.cpp
 )
 
-target_include_directories(union_find_viz PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(union_find_viz PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(union_find_viz PRIVATE raylib)
 
 if(APPLE)

@@ -1,27 +1,25 @@
 #include "renderer.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <cmath>
 #include <algorithm>
+#include <numeric>
 #include <sstream>
 
-// Cluster palette: 12 vivid hues at ~30° intervals.
-// Avoids: greys (structural edges), muted pastels (unfired detectors),
-//         white (fired/spanning tree), neon green (corrections).
+// Cluster palette: 10 harmonious colors, avoiding pure red/blue (reserved for X/Z node types).
 static const Color CLUSTER_COLORS[] = {
-    {255, 55, 55, 255},   //   0° red
-    {255, 150, 0, 255},   //  30° orange
-    {230, 210, 30, 255},  //  60° yellow
-    {100, 210, 40, 255},  //  90° chartreuse
-    {0, 195, 80, 255},    // 120° green
-    {0, 200, 165, 255},   // 150° mint
-    {0, 170, 230, 255},   // 180° sky
-    {70, 100, 255, 255},  // 210° azure
-    {150, 60, 255, 255},  // 250° violet
-    {220, 40, 180, 255},  // 310° fuchsia
-    {255, 60, 120, 255},  // 340° rose
-    {255, 110, 60, 255},  // 20°  coral
+    {80, 180, 190, 255},   // teal
+    {90, 150, 220, 255},   // steel blue
+    {130, 120, 210, 255},  // soft indigo
+    {175, 100, 195, 255},  // orchid
+    {210, 95, 150, 255},   // mauve
+    {230, 120, 90, 255},   // coral
+    {220, 160, 60, 255},   // amber
+    {140, 185, 90, 255},   // olive green
+    {95, 195, 145, 255},   // mint
+    {160, 130, 200, 255},  // lavender
 };
-static const int NUM_CLUSTER_COLORS = 12;
+static const int NUM_CLUSTER_COLORS = 10;
 
 Color get_cluster_color(int cluster_index) {
     return CLUSTER_COLORS[cluster_index % NUM_CLUSTER_COLORS];
@@ -43,6 +41,13 @@ Renderer::Renderer(int screen_width, int screen_height)
 
     graph_center_ = {0, 0, 0};
     graph_radius_ = 10.0f;
+
+    // Load a crisp TTF font for panel text
+    panel_font_ = LoadFontEx("/System/Library/Fonts/SFNS.ttf", 32, 0, 250);
+    if (panel_font_.glyphCount == 0)
+        panel_font_ = LoadFontEx("/System/Library/Fonts/Helvetica.ttc", 32, 0, 250);
+    if (panel_font_.glyphCount == 0)
+        panel_font_ = GetFontDefault();
 }
 
 void Renderer::compute_layout(const DecodingGraph3D& graph) {
@@ -285,14 +290,14 @@ void Renderer::render_graph_edges(const DecodingGraph3D& graph, bool dim) {
 
         Color col;
         if (ge.is_boundary) {
-            col = {160, 160, 160, (unsigned char)(dim ? 60 : 180)}; // neutral grey
+            col = {160, 160, 160, (unsigned char)(dim ? 35 : 180)}; // neutral grey
         } else {
             float dz = std::abs(graph.node_positions[ge.node0].z -
                                 graph.node_positions[ge.node1].z);
             if (dz > 0.1f) {
-                col = {170, 150, 120, (unsigned char)(dim ? 70 : 200)}; // warm grey (temporal)
+                col = {170, 150, 120, (unsigned char)(dim ? 35 : 200)}; // warm grey (temporal)
             } else {
-                col = {120, 140, 175, (unsigned char)(dim ? 70 : 200)}; // cool grey (spatial)
+                col = {120, 140, 175, (unsigned char)(dim ? 35 : 200)}; // cool grey (spatial)
             }
         }
 
@@ -301,18 +306,9 @@ void Renderer::render_graph_edges(const DecodingGraph3D& graph, bool dim) {
     }
 }
 
-// Draw a cube (axis-aligned) at position with given half-size
-static void draw_cube_at(Vector3 pos, float half_size, Color fill, Color wire) {
-    DrawCube(pos, half_size * 2, half_size * 2, half_size * 2, fill);
-    DrawCubeWires(pos, half_size * 2, half_size * 2, half_size * 2, wire);
-}
-
 void Renderer::render_detector_nodes(const DecodingGraph3D& graph,
                                       const std::vector<int>& syndrome,
                                       const DecoderSnapshot* snapshot) {
-    float normal_radius = 0.15f;
-    float fired_radius = 0.3f;
-
     for (int i = 0; i < graph.num_detectors; i++) {
         Vector3 pos = to_world(graph.node_positions[i]);
         bool fired = (i < (int)syndrome.size() && syndrome[i] == 1);
@@ -331,54 +327,40 @@ void Renderer::render_detector_nodes(const DecodingGraph3D& graph,
             }
         }
 
-        // Determine base color
+        bool in_cluster = (owning_cluster >= 0);
+
+        // Base color by stabilizer type
         Color base_col;
+        if (is_x) {
+            base_col = {230, 70, 60, 255};   // red for X-type
+        } else {
+            base_col = {60, 130, 230, 255};   // blue for Z-type
+        }
+
+        // Size and opacity by state
         float radius;
         if (fired) {
-            if (owning_cluster >= 0) {
-                base_col = get_cluster_color(owning_cluster);
-            } else {
-                base_col = {50, 50, 50, 255};  // dark grey — stands out on white bg
-            }
-            radius = fired_radius;
+            radius = in_cluster ? 0.32f : 0.28f;
+            base_col.a = 255;
         } else {
-            if (owning_cluster >= 0) {
-                base_col = get_cluster_color(owning_cluster);
-                base_col.a = 220;
-            } else {
-                // Muted tones — clearly distinct from vivid cluster colors
-                if (is_x) {
-                    base_col = {180, 140, 120, 255};  // warm buff
-                } else {
-                    base_col = {120, 140, 180, 255};  // cool steel
-                }
-            }
-            radius = owning_cluster >= 0 ? normal_radius * 1.3f : normal_radius;
+            radius = in_cluster ? 0.14f : 0.09f;
+            base_col.a = in_cluster ? 200 : 55;
         }
 
-        // Draw shape: X-type = cube, Z-type = sphere
-        if (is_x) {
-            Color wire_col = {
-                (unsigned char)std::min(255, base_col.r + 40),
-                (unsigned char)std::min(255, base_col.g + 40),
-                (unsigned char)std::min(255, base_col.b + 40),
-                255
-            };
-            draw_cube_at(pos, radius * 0.85f, base_col, wire_col);
-        } else {
-            DrawSphere(pos, radius, base_col);
+        // All nodes are spheres
+        DrawSphere(pos, radius, base_col);
+
+        // Cluster ownership indicator: wireframe ring in cluster color
+        if (in_cluster) {
+            Color ring_col = get_cluster_color(owning_cluster);
+            DrawSphereWires(pos, radius + 0.06f, 6, 6, ring_col);
         }
 
-        // Dark core for fired detectors — marks the defect center
-        if (fired && owning_cluster >= 0) {
-            Color core = {40, 40, 40, 255};
-            if (is_x) {
-                DrawCube(pos, radius * 0.7f, radius * 0.7f, radius * 0.7f, core);
-            } else {
-                DrawSphere(pos, radius * 0.5f, core);
-            }
+        // Fired nodes get a bright white specular core
+        if (fired) {
+            Color core = {255, 255, 255, 180};
+            DrawSphere(pos, radius * 0.3f, core);
         }
-
     }
 }
 
@@ -587,12 +569,16 @@ void Renderer::render_cluster_sheaths(const DecodingGraph3D& graph,
                                        const DecoderSnapshot& snap) {
     float inflate = 0.5f;
 
+    bool post_validation = (snap.phase == DecoderPhase::SPANNING_FOREST ||
+                            snap.phase == DecoderPhase::FOREST_PEELING ||
+                            snap.phase == DecoderPhase::DONE);
+
     for (int c = 0; c < (int)snap.clusters_activity.size(); c++) {
         if (snap.clusters_activity[c] == 0) continue;
 
         bool active = (snap.clusters_activity[c] == 1);
         Color col = get_cluster_color(c);
-        col.a = active ? 35 : 14;
+        col.a = post_validation ? 12 : (active ? 45 : 14);
 
         // Collect world positions of all nodes in this cluster
         std::vector<Vector3> node_pos;
@@ -608,52 +594,60 @@ void Renderer::render_cluster_sheaths(const DecodingGraph3D& graph,
 
 void Renderer::render_cluster_regions(const DecodingGraph3D& graph,
                                        const DecoderSnapshot& snap) {
-    float r_interior = 0.35f;
-    float r_frontier = 0.25f;
-
+    // Only draw thin wireframe rings on frontier nodes (state=1) as growth-boundary indicators.
+    // Interior nodes are skipped — sheaths + edges already convey cluster extent.
     for (int c = 0; c < (int)snap.clusters_activity.size(); c++) {
         if (snap.clusters_activity[c] == 0) continue;
 
         Color col = get_cluster_color(c);
-        bool active = (snap.clusters_activity[c] == 1);
+        col.a = 100;
 
         for (int n = 0; n < (int)snap.clusters_nodes[c].size(); n++) {
             int state = snap.clusters_nodes[c][n];
-            if (state == 0 || n >= (int)graph.node_positions.size()) continue;
+            if (state != 1 || n >= (int)graph.node_positions.size()) continue;
 
             Vector3 pos = to_world(graph.node_positions[n]);
-            if (state == 2) {
-                // Interior: filled translucent sphere
-                Color fill = col;
-                fill.a = active ? 50 : 25;
-                DrawSphere(pos, r_interior, fill);
-            } else {
-                // Frontier: smaller filled sphere + wireframe ring
-                Color fill = col;
-                fill.a = active ? 35 : 18;
-                DrawSphere(pos, r_frontier, fill);
-                Color wire = col;
-                wire.a = active ? 160 : 70;
-                DrawSphereWires(pos, r_frontier + 0.02f, 6, 6, wire);
-            }
+            DrawSphereWires(pos, 0.22f, 4, 4, col);
         }
+    }
+}
+
+// Draw a dashed cylinder between two points (n_dashes short segments with gaps)
+static void draw_dashed_cylinder(Vector3 p0, Vector3 p1, float radius, int n_dashes, Color color) {
+    float total = 2 * n_dashes - 1; // segments + gaps
+    for (int i = 0; i < n_dashes; i++) {
+        float t0 = (2.0f * i) / total;
+        float t1 = (2.0f * i + 1.0f) / total;
+        Vector3 a = {
+            p0.x + (p1.x - p0.x) * t0,
+            p0.y + (p1.y - p0.y) * t0,
+            p0.z + (p1.z - p0.z) * t0
+        };
+        Vector3 b = {
+            p0.x + (p1.x - p0.x) * t1,
+            p0.y + (p1.y - p0.y) * t1,
+            p0.z + (p1.z - p0.z) * t1
+        };
+        DrawCylinderEx(a, b, radius, radius, 6, color);
     }
 }
 
 void Renderer::render_cluster_edges(const DecodingGraph3D& graph,
                                      const DecoderSnapshot& snap) {
+    bool post_validation = (snap.phase == DecoderPhase::SPANNING_FOREST ||
+                            snap.phase == DecoderPhase::FOREST_PEELING ||
+                            snap.phase == DecoderPhase::DONE);
+
     for (int c = 0; c < (int)snap.clusters_activity.size(); c++) {
         if (snap.clusters_activity[c] == 0) continue;
 
         Color col = get_cluster_color(c);
         bool active = (snap.clusters_activity[c] == 1);
 
-        // Dim inactive clusters: reduce opacity and use thinner edges
-        if (!active) {
-            col.a = 70;
+        // Dim during post-validation so spanning tree/corrections stand out
+        if (!active || post_validation) {
+            col.a = post_validation ? 50 : 70;
         }
-        float r_full = active ? 0.06f : 0.03f;
-        float r_half = active ? 0.035f : 0.02f;
 
         for (int e = 0; e < (int)snap.clusters_edges[c].size() &&
                          e < (int)graph.uf_edges.size(); e++) {
@@ -668,21 +662,11 @@ void Renderer::render_cluster_edges(const DecodingGraph3D& graph,
             Vector3 p1 = to_world(graph.node_positions[n1]);
 
             if (edge_state == 1) {
-                // Half-grown: thin cylinder to midpoint + glow dot at tip
-                Vector3 mid = {
-                    (p0.x + p1.x) * 0.5f,
-                    (p0.y + p1.y) * 0.5f,
-                    (p0.z + p1.z) * 0.5f
-                };
-                DrawCylinderEx(p0, mid, r_half, r_half, 6, col);
-                if (active) {
-                    Color glow = col;
-                    glow.a = 150;
-                    DrawSphere(mid, 0.07f, glow);
-                }
+                float r = post_validation ? 0.015f : (active ? 0.03f : 0.02f);
+                draw_dashed_cylinder(p0, p1, r, 5, col);
             } else {
-                // Fully grown
-                DrawCylinderEx(p0, p1, r_full, r_full, 6, col);
+                float r = post_validation ? 0.025f : (active ? 0.055f : 0.04f);
+                DrawCylinderEx(p0, p1, r, r, 6, col);
             }
         }
     }
@@ -690,7 +674,13 @@ void Renderer::render_cluster_edges(const DecodingGraph3D& graph,
 
 void Renderer::render_spanning_forest(const DecodingGraph3D& graph,
                                        const DecoderSnapshot& snap) {
-    Color tree_color = {40, 50, 70, 220}; // dark steel
+    Color tree_color = {40, 40, 55, 255}; // dark charcoal — high contrast on light bg
+
+    // Disable depth test so tree draws on top of cluster edges (same geometry, Z-fights otherwise)
+    rlDisableDepthTest();
+
+    // Track which nodes participate in trees (for joint markers)
+    std::vector<bool> in_tree(graph.node_positions.size(), false);
 
     for (int t = 0; t < (int)snap.spanning_forest.size(); t++) {
         for (int n = 0; n < (int)snap.spanning_forest[t].size(); n++) {
@@ -706,14 +696,40 @@ void Renderer::render_spanning_forest(const DecodingGraph3D& graph,
             Vector3 p0 = to_world(graph.node_positions[n0]);
             Vector3 p1 = to_world(graph.node_positions[n1]);
 
-            DrawCylinderEx(p0, p1, 0.045f, 0.045f, 6, tree_color);
+            DrawCylinderEx(p0, p1, 0.08f, 0.08f, 6, tree_color);
+            in_tree[n0] = true;
+            in_tree[n1] = true;
+        }
+
+        // Draw root node marker (tree[n] == -1 means root)
+        for (int n = 0; n < (int)snap.spanning_forest[t].size(); n++) {
+            if (snap.spanning_forest[t][n] == -1 && n < (int)graph.node_positions.size()) {
+                Vector3 pos = to_world(graph.node_positions[n]);
+                DrawSphere(pos, 0.14f, Color{255, 255, 255, 200});
+                DrawSphereWires(pos, 0.16f, 6, 6, tree_color);
+                in_tree[n] = true;
+            }
         }
     }
+
+    // Draw small joint spheres at tree nodes for visual connectivity
+    Color joint_color = {60, 60, 75, 180};
+    for (int i = 0; i < (int)in_tree.size(); i++) {
+        if (!in_tree[i]) continue;
+        Vector3 pos = to_world(graph.node_positions[i]);
+        DrawSphere(pos, 0.06f, joint_color);
+    }
+
+    rlEnableDepthTest();
 }
 
 void Renderer::render_corrections(const DecodingGraph3D& graph,
                                    const DecoderSnapshot& snap) {
     Color corr_color = {50, 255, 100, 255}; // neon green
+    Color glow_color = {100, 255, 140, 140}; // softer green glow
+
+    // Disable depth test so corrections draw on top of cluster edges and spanning tree
+    rlDisableDepthTest();
 
     for (int e = 0; e < (int)snap.edge_corrections.size() &&
                      e < (int)graph.uf_edges.size(); e++) {
@@ -727,89 +743,128 @@ void Renderer::render_corrections(const DecodingGraph3D& graph,
         Vector3 p0 = to_world(graph.node_positions[n0]);
         Vector3 p1 = to_world(graph.node_positions[n1]);
 
-        DrawCylinderEx(p0, p1, 0.07f, 0.07f, 6, corr_color);
+        // Thick correction edge
+        DrawCylinderEx(p0, p1, 0.10f, 0.10f, 8, corr_color);
+
+        // Glowing endpoint spheres
+        DrawSphere(p0, 0.13f, glow_color);
+        DrawSphere(p1, 0.13f, glow_color);
     }
+
+    rlEnableDepthTest();
 }
 
 void Renderer::render_panel(const DecodingGraph3D& graph, const DecoderSnapshot* snap,
                              const std::string& status, const std::string& mode) {
     float px = screen_width_ * 0.78f;
     float py = 20.0f;
-    int fs = 16;
-    int gap = 22;
+    float panel_w = screen_width_ - px + 10;
 
-    // Background panel — light theme
-    DrawRectangle((int)px - 10, 0, screen_width_ - (int)px + 10, screen_height_,
+    // Helper: draw text using panel font and return the y-advance
+    auto draw_line = [&](const char* text, float x, float y, float size, Color col) -> float {
+        DrawTextEx(panel_font_, text, {x, y}, size, 1, col);
+        return size + 4.0f;
+    };
+
+    // Helper: draw a horizontal divider
+    auto draw_divider = [&](float y) -> float {
+        DrawLine((int)px, (int)y + 4, (int)(px + panel_w - 20), (int)y + 4, Color{180, 180, 195, 180});
+        return 12.0f;
+    };
+
+    Color info_col = {80, 80, 100, 255};
+    Color heading_col = {100, 100, 120, 255};
+
+    // Background panel
+    DrawRectangle((int)px - 10, 0, (int)panel_w + 10, screen_height_,
                   Color{235, 235, 240, 240});
     DrawLine((int)px - 10, 0, (int)px - 10, screen_height_, Color{190, 190, 200, 255});
 
-    DrawText("Union-Find 3D Decoder", (int)px, (int)py, 20, Color{30, 30, 40, 255});
-    py += 30;
+    // Title
+    py += draw_line("UNION-FIND DECODER", px, py, 22, Color{30, 30, 40, 255});
+    py += 4;
+    py += draw_divider(py);
 
-    Color info_col = {80, 80, 100, 255};  // dark grey for info text
+    // Graph stats
+    py += draw_line(TextFormat("Detectors: %d", graph.num_detectors), px, py, 16, info_col);
+    py += draw_line(TextFormat("Rounds: %d", graph.num_rounds), px, py, 16, info_col);
+    py += draw_line(TextFormat("Edges: %d", (int)graph.graph_edges.size()), px, py, 16, info_col);
 
-    DrawText(TextFormat("Detectors: %d", graph.num_detectors), (int)px, (int)py, fs, info_col);
-    py += gap;
-
-    DrawText(TextFormat("Rounds: %d", graph.num_rounds), (int)px, (int)py, fs, info_col);
-    py += gap;
-
-    DrawText(TextFormat("Edges: %d", (int)graph.graph_edges.size()), (int)px, (int)py, fs, info_col);
-    py += gap;
-
-    DrawText(mode.c_str(), (int)px, (int)py, fs, Color{200, 100, 40, 255});
-    py += gap + 10;
-
-    // Phase indicator
+    // Count fired detectors
+    int fired_count = 0;
     if (snap) {
+        // Count from clusters_nodes — any cluster that contains fired detectors
+        // We can approximate from the graph by checking syndrome indirectly.
+        // For simplicity, count nodes that are in any cluster with activity > 0
+        for (int c = 0; c < (int)snap->clusters_activity.size(); c++) {
+            if (snap->clusters_activity[c] == 0) continue;
+            for (int n = 0; n < (int)snap->clusters_nodes[c].size(); n++) {
+                if (snap->clusters_nodes[c][n] != 0 && n < graph.num_detectors) {
+                    // We count distinct fired nodes below more accurately
+                }
+            }
+        }
+    }
+    // We don't have direct access to syndrome here, so show mode instead
+    py += draw_line(mode.c_str(), px, py, 16, Color{200, 100, 40, 255});
+    py += draw_divider(py);
+
+    // Phase-specific content
+    if (snap && snap->phase != DecoderPhase::IDLE) {
+        // Phase badge with colored background
         const char* phase_str = "Idle";
-        Color phase_col = GRAY;
+        Color phase_col = {120, 120, 120, 255};
+        Color badge_bg = {200, 200, 200, 60};
         switch (snap->phase) {
             case DecoderPhase::SYNDROME_VALIDATION:
-                phase_str = "Syndrome Validation";
+                phase_str = "SYNDROME VALIDATION";
                 phase_col = Color{200, 130, 20, 255};
+                badge_bg = Color{200, 130, 20, 40};
                 break;
             case DecoderPhase::SPANNING_FOREST:
-                phase_str = "Spanning Forest";
+                phase_str = "SPANNING FOREST";
                 phase_col = Color{40, 50, 70, 255};
+                badge_bg = Color{40, 50, 70, 40};
                 break;
             case DecoderPhase::FOREST_PEELING:
-                phase_str = "Forest Peeling";
+                phase_str = "FOREST PEELING";
                 phase_col = Color{20, 160, 60, 255};
+                badge_bg = Color{20, 160, 60, 40};
                 break;
             case DecoderPhase::DONE:
-                phase_str = "Done";
+                phase_str = "DONE";
                 phase_col = Color{30, 150, 30, 255};
+                badge_bg = Color{30, 150, 30, 40};
                 break;
             default: break;
         }
-        DrawText(TextFormat("Phase: %s", phase_str), (int)px, (int)py, fs, phase_col);
-        py += gap;
-        DrawText(TextFormat("Cycle: %d", snap->cycle_number), (int)px, (int)py, fs, info_col);
-        py += gap;
 
-        // Sub-phase and cluster info during syndrome validation
+        // Draw badge background
+        Vector2 badge_size = MeasureTextEx(panel_font_, phase_str, 16, 1);
+        DrawRectangle((int)px - 2, (int)py - 1, (int)badge_size.x + 18, (int)badge_size.y + 6, badge_bg);
+        DrawRectangle((int)px - 2, (int)py - 1, 4, (int)badge_size.y + 6, phase_col); // left accent bar
+        py += draw_line(phase_str, px + 8, py + 1, 16, phase_col);
+        py += 4;
+
+        // Syndrome Validation details
         if (snap->phase == DecoderPhase::SYNDROME_VALIDATION) {
+            // Sub-phase with colored dot
             const char* sub_str = "GROW";
             Color sub_col = Color{30, 150, 30, 255};
             switch (snap->syndrome_sub_phase) {
                 case SyndromeSubPhase::GROW:
-                    sub_str = "GROW";
-                    sub_col = Color{30, 150, 30, 255};
-                    break;
+                    sub_str = "GROW"; sub_col = Color{30, 150, 30, 255}; break;
                 case SyndromeSubPhase::MERGE:
-                    sub_str = "MERGE";
-                    sub_col = Color{180, 130, 20, 255};
-                    break;
+                    sub_str = "MERGE"; sub_col = Color{200, 160, 20, 255}; break;
                 case SyndromeSubPhase::DEACTIVATE:
-                    sub_str = "DEACTIVATE";
-                    sub_col = Color{180, 50, 50, 255};
-                    break;
+                    sub_str = "DEACTIVATE"; sub_col = Color{180, 50, 50, 255}; break;
             }
-            DrawText(TextFormat("Sub-phase: %s", sub_str), (int)px, (int)py, fs, sub_col);
-            py += gap;
+            DrawCircle((int)px + 4, (int)py + 8, 5, sub_col);
+            py += draw_line(TextFormat("Sub-phase: %s", sub_str), px + 14, py, 16, info_col);
 
-            // Count active/inactive/boundary clusters and defects per active cluster
+            py += draw_line(TextFormat("Cycle: %d", snap->cycle_number), px, py, 16, info_col);
+
+            // Cluster counts
             int n_active = 0, n_inactive = 0, n_boundary = 0;
             for (int c = 0; c < (int)snap->clusters_activity.size(); c++) {
                 switch (snap->clusters_activity[c]) {
@@ -819,12 +874,13 @@ void Renderer::render_panel(const DecodingGraph3D& graph, const DecoderSnapshot*
                     default: break;
                 }
             }
-            DrawText(TextFormat("Active: %d  Inact: %d  Bnd: %d",
-                     n_active, n_inactive, n_boundary),
-                     (int)px, (int)py, 14, info_col);
-            py += gap;
+            py += draw_line(TextFormat("Active: %d  Inact: %d", n_active, n_inactive), px, py, 14, info_col);
+            py += draw_line(TextFormat("Boundary: %d", n_boundary), px, py, 14, info_col);
 
-            // Show node count per active cluster (up to 8 to avoid panel overflow)
+            // Active clusters section
+            py += 4;
+            py += draw_line("--- Active Clusters ---", px, py, 14, heading_col);
+
             int shown = 0;
             for (int c = 0; c < (int)snap->clusters_activity.size() && shown < 8; c++) {
                 if (snap->clusters_activity[c] != 1) continue;
@@ -833,14 +889,52 @@ void Renderer::render_panel(const DecodingGraph3D& graph, const DecoderSnapshot*
                     if (snap->clusters_nodes[c][i] != 0) cluster_size++;
                 }
                 Color cc = get_cluster_color(c);
-                DrawRectangle((int)px, (int)py + 2, 10, 10, cc);
-                DrawText(TextFormat("C%d: %d nodes", c, cluster_size),
-                         (int)px + 14, (int)py, 13, info_col);
-                py += 18;
+                DrawRectangle((int)px, (int)py + 3, 10, 10, cc);
+                py += draw_line(TextFormat("C%d: %d nodes", c, cluster_size), px + 14, py, 14, info_col);
                 shown++;
             }
         }
-        py += 10;
+
+        // Spanning Forest details
+        if (snap->phase == DecoderPhase::SPANNING_FOREST) {
+            py += draw_line(TextFormat("Cycle: %d", snap->cycle_number), px, py, 16, info_col);
+
+            int trees_built = 0;
+            int total_active = 0;
+            for (int c = 0; c < (int)snap->clusters_activity.size(); c++) {
+                if (snap->clusters_activity[c] == 1) total_active++;
+            }
+            for (int t = 0; t < (int)snap->spanning_forest.size(); t++) {
+                bool has_edges = false;
+                for (int n = 0; n < (int)snap->spanning_forest[t].size(); n++) {
+                    if (snap->spanning_forest[t][n] >= 0) { has_edges = true; break; }
+                }
+                if (has_edges) trees_built++;
+            }
+            py += draw_line(TextFormat("Trees built: %d / %d", trees_built, total_active), px, py, 16, info_col);
+        }
+
+        // Forest Peeling details
+        if (snap->phase == DecoderPhase::FOREST_PEELING) {
+            int corr_count = 0;
+            for (int e = 0; e < (int)snap->edge_corrections.size(); e++) {
+                if (snap->edge_corrections[e] != 0) corr_count++;
+            }
+            py += draw_line(TextFormat("Corrections found: %d", corr_count), px, py, 16, info_col);
+        }
+
+        // Done
+        if (snap->phase == DecoderPhase::DONE) {
+            int corr_count = 0;
+            for (int e = 0; e < (int)snap->edge_corrections.size(); e++) {
+                if (snap->edge_corrections[e] != 0) corr_count++;
+            }
+            py += draw_line("Decoding complete", px, py, 16, Color{30, 150, 30, 255});
+            py += draw_line(TextFormat("Total corrections: %d", corr_count), px, py, 16, info_col);
+            py += draw_line(TextFormat("Cycles used: %d", snap->cycle_number), px, py, 16, info_col);
+        }
+
+        py += draw_divider(py);
     }
 
     // Status text (split by newlines)
@@ -848,34 +942,36 @@ void Renderer::render_panel(const DecodingGraph3D& graph, const DecoderSnapshot*
         std::istringstream iss(status);
         std::string line;
         while (std::getline(iss, line)) {
-            DrawText(line.c_str(), (int)px, (int)py, 14, Color{40, 80, 160, 255});
-            py += 18;
+            py += draw_line(line.c_str(), px, py, 14, Color{40, 80, 160, 255});
         }
     }
-    py += 15;
+    py += 8;
+    py += draw_divider(py);
 
     // Legend
-    DrawText("--- Legend ---", (int)px, (int)py, fs, Color{100, 100, 120, 255});
-    py += gap;
+    py += draw_line("--- Legend ---", px, py, 14, heading_col);
 
-    auto legend_item = [&](Color col, const char* label) {
-        DrawRectangle((int)px, (int)py + 2, 12, 12, col);
-        DrawText(label, (int)px + 18, (int)py, 14, info_col);
-        py += 20;
+    auto legend_dot = [&](Color col, const char* label) {
+        DrawCircle((int)px + 6, (int)py + 7, 5, col);
+        py += draw_line(label, px + 16, py, 14, info_col);
     };
 
-    legend_item(Color{120, 140, 180, 255}, "Z-det (sphere)");
-    legend_item(Color{180, 140, 120, 255}, "X-det (cube)");
-    legend_item(Color{50, 50, 50, 255}, "Detector (fired)");
-    legend_item(Color{120, 140, 175, 255}, "Spatial edge");
-    legend_item(Color{170, 150, 120, 255}, "Temporal edge");
-    legend_item(Color{40, 50, 70, 255}, "Spanning tree");
-    legend_item(Color{50, 255, 100, 255}, "Correction");
-    py += 15;
+    auto legend_line = [&](Color col, const char* label) {
+        DrawRectangle((int)px, (int)py + 6, 14, 3, col);
+        py += draw_line(label, px + 18, py, 14, info_col);
+    };
+
+    legend_dot(Color{60, 130, 230, 255}, "Z-detector (blue)");
+    legend_dot(Color{230, 70, 60, 255}, "X-detector (red)");
+    legend_dot(Color{60, 130, 230, 180}, "Fired (large)");
+    legend_line(Color{40, 50, 70, 220}, "Spanning tree");
+    legend_line(Color{50, 255, 100, 255}, "Correction");
+
+    py += 8;
+    py += draw_divider(py);
 
     // Controls
-    DrawText("--- Controls ---", (int)px, (int)py, fs, Color{100, 100, 120, 255});
-    py += gap;
+    py += draw_line("--- Controls ---", px, py, 14, heading_col);
 
     const char* controls[] = {
         "D: Start decode",
@@ -891,7 +987,6 @@ void Renderer::render_panel(const DecodingGraph3D& graph, const DecoderSnapshot*
         "Scroll: Zoom",
     };
     for (const char* c : controls) {
-        DrawText(c, (int)px, (int)py, 13, Color{100, 100, 120, 255});
-        py += 18;
+        py += draw_line(c, px, py, 13, heading_col);
     }
 }

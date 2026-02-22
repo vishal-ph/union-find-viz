@@ -2,6 +2,8 @@
 #define DECODER_STEPPER_H
 
 #include <vector>
+#include <array>
+#include <utility>
 #include "union_find.h"
 
 enum class DecoderPhase {
@@ -53,13 +55,14 @@ public:
     std::vector<int> get_corrections() const { return snapshot_.edge_corrections; }
 
 private:
-    std::vector<std::vector<int>> edges_;
+    std::vector<std::array<int,2>> edges_;
     std::vector<int> boundary_nodes_;
     std::vector<int> syndrome_;
     int n_nodes_;
     int n_edges_;
     int n_clusters_;
-    std::vector<std::vector<int>> graph_edge_idxs_;
+    std::vector<std::vector<int>> adjacency_;
+    std::vector<std::vector<std::pair<int,int>>> adj_list_; // adj_list_[node] = [(neighbor, edge_idx), ...]
 
     DecoderSnapshot snapshot_;
     SyndromeSubPhase syndrome_sub_phase_;
@@ -69,7 +72,8 @@ private:
 
     // Peeling state
     int peel_current_tree_;
-    State* peel_state_;
+    std::vector<int> peel_defects_;
+    std::vector<int> peel_leaf_stack_;
 
     void init_syndrome_validation();
     void init_spanning_forest();
@@ -80,6 +84,7 @@ private:
     bool step_forest_peeling();
 
     bool has_active_clusters() const;
+    void advance_to_next_nonempty_tree();
 };
 
 #endif // DECODER_STEPPER_H

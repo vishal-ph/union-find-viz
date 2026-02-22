@@ -37,6 +37,9 @@ private:
     float graph_radius_;
     bool layout_computed_ = false;
 
+    // Panel font
+    Font panel_font_;
+
     // Orbital camera state
     float orbit_angle_h_ = 0.7f;   // horizontal angle (radians)
     float orbit_angle_v_ = 0.6f;   // vertical angle (radians)
