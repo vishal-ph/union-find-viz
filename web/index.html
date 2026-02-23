@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Union-Find Decoder Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <!-- File drop overlay -->
+    <div id="drop-overlay" class="hidden">
+        <div class="drop-content">
+            <div class="drop-icon">&#128230;</div>
+            <p>Drop .dem and events files here</p>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="hidden"></div>
+
+    <!-- Main layout -->
+    <div id="app">
+        <div id="viewport-container">
+            <canvas id="viewport"></canvas>
+            <!-- Loading screen -->
+            <div id="loading-screen">
+                <div class="loading-content">
+                    <h1>Union-Find Decoder</h1>
+                    <p>3D Visualization</p>
+                    <div class="loading-actions">
+                        <button id="btn-load-demo" class="btn btn-primary">Load Demo</button>
+                        <span class="loading-divider">or</span>
+                        <label class="btn btn-secondary" id="file-upload-label">
+                            Load Files
+                            <input type="file" id="file-input" multiple accept=".dem,.txt" style="display:none">
+                        </label>
+                    </div>
+                    <div class="loading-divider-row"><span>or generate</span></div>
+                    <div class="generate-section">
+                        <div class="generate-inputs">
+                            <div class="input-group">
+                                <label for="gen-distance">Distance</label>
+                                <input type="number" id="gen-distance" value="25" min="3" max="50" step="2">
+                            </div>
+                            <div class="input-group">
+                                <label for="gen-rounds">Rounds</label>
+                                <input type="number" id="gen-rounds" value="10" min="1" max="100">
+                            </div>
+                            <div class="input-group">
+                                <label for="gen-p">Error rate</label>
+                                <input type="number" id="gen-p" value="0.0005" min="0.0001" max="0.5" step="0.0001">
+                            </div>
+                        </div>
+                        <button id="btn-generate" class="btn btn-primary">Generate &amp; Load</button>
+                        <div id="generate-status">
+                            <span class="spinner"></span>
+                            <span id="generate-status-text">Generating circuit...</span>
+                        </div>
+                        <div id="generate-error"></div>
+                    </div>
+                    <p class="hint">You can also drag &amp; drop .dem + events files</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="panel">
+            <div class="panel-section">
+                <h2 class="panel-title">UNION-FIND DECODER</h2>
+            </div>
+            <div class="panel-divider"></div>
+
+            <div id="graph-stats" class="panel-section hidden">
+                <div class="stat-row"><span class="stat-label">Detectors</span><span id="stat-detectors" class="stat-value">-</span></div>
+                <div class="stat-row"><span class="stat-label">Rounds</span><span id="stat-rounds" class="stat-value">-</span></div>
+                <div class="stat-row"><span class="stat-label">Edges</span><span id="stat-edges" class="stat-value">-</span></div>
+                <div class="stat-row"><span class="stat-label">Fired</span><span id="stat-fired" class="stat-value">-</span></div>
+                <div id="mode-badge" class="badge badge-ready">READY</div>
+            </div>
+            <div class="panel-divider"></div>
+
+            <!-- Phase info -->
+            <div id="phase-section" class="panel-section hidden">
+                <div id="phase-badge" class="badge">IDLE</div>
+                <div id="phase-details"></div>
+            </div>
+            <div class="panel-divider"></div>
+
+            <!-- Controls -->
+            <div id="controls-section" class="panel-section hidden">
+                <h3 class="section-title">Controls</h3>
+                <div class="btn-row">
+                    <button id="btn-decode" class="btn btn-small">D Decode</button>
+                    <button id="btn-step" class="btn btn-small" disabled>Space Step</button>
+                    <button id="btn-auto" class="btn btn-small" disabled>A Auto</button>
+                </div>
+                <div class="btn-row">
+                    <button id="btn-ff" class="btn btn-small" disabled>F Forward</button>
+                    <button id="btn-reset" class="btn btn-small">R Reset</button>
+                </div>
+                <div class="speed-row">
+                    <span class="stat-label">Speed</span>
+                    <button id="btn-slower" class="btn btn-tiny">-</button>
+                    <span id="speed-display" class="stat-value">0.5s</span>
+                    <button id="btn-faster" class="btn btn-tiny">+</button>
+                </div>
+                <div class="btn-row" style="margin-top: 4px;">
+                    <button id="btn-new-graph" class="btn btn-small">N New Graph</button>
+                </div>
+            </div>
+            <div class="panel-divider"></div>
+
+            <!-- Layer toggles -->
+            <div id="layers-section" class="panel-section hidden">
+                <h3 class="section-title">Layers</h3>
+                <label class="toggle-row"><input type="checkbox" id="toggle-time-planes" checked><span>1 Time Planes</span></label>
+                <label class="toggle-row"><input type="checkbox" id="toggle-graph-edges" checked><span>2 Graph Edges</span></label>
+                <label class="toggle-row"><input type="checkbox" id="toggle-lattice" checked><span>3 Lattice Underlay</span></label>
+                <label class="toggle-row"><input type="checkbox" id="toggle-cluster-sheaths" checked><span>4 Cluster Sheaths</span></label>
+                <label class="toggle-row"><input type="checkbox" id="toggle-cluster-edges" checked><span>5 Cluster Edges</span></label>
+            </div>
+            <div class="panel-divider"></div>
+
+            <!-- Inspector -->
+            <div id="inspector-section" class="panel-section hidden">
+                <h3 class="section-title">Inspector</h3>
+                <div id="inspector-content">
+                    <p class="hint">Click a detector node to inspect</p>
+                </div>
+            </div>
+            <div class="panel-divider"></div>
+
+            <!-- Legend -->
+            <div id="legend-section" class="panel-section hidden">
+                <h3 class="section-title">Legend</h3>
+                <div class="legend-row"><span class="legend-dot" style="background:#3c82e6"></span>Z-detector (blue)</div>
+                <div class="legend-row"><span class="legend-dot" style="background:#e6463c"></span>X-detector (red)</div>
+                <div class="legend-row"><span class="legend-dot legend-dot-large" style="background:#3c82e6"></span>Fired (large)</div>
+                <div class="legend-row"><span class="legend-line" style="background:#8888aa"></span>Spanning tree</div>
+                <div class="legend-row"><span class="legend-line" style="background:#32ff64"></span>Correction</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="decoder.js"></script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

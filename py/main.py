@@ -37,9 +37,9 @@ if __name__ == "__main__":
     out_dir = args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    distance = 5
-    rounds = 5
-    p = 0.01
+    distance = 25
+    rounds = 10
+    p = 0.0005
 
     noisy_circuit = generate_noisy_circuit(distance, rounds, p)
     dem = evaluate_dem(noisy_circuit)

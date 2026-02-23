@@ -25,14 +25,15 @@ struct DecoderSnapshot {
     SyndromeSubPhase syndrome_sub_phase = SyndromeSubPhase::GROW;
     int cycle_number = 0;
 
-    // Phase 1: syndrome validation
-    std::vector<std::vector<int>> clusters_nodes;
-    std::vector<std::vector<int>> clusters_edges;
+    // Phase 1: syndrome validation (sparse)
+    std::vector<SparseStateMap> clusters_nodes;
+    std::vector<SparseStateMap> clusters_edges;
     std::vector<int> clusters_activity;
+    std::vector<int> cluster_detector_ids;  // cluster c was seeded by detector cluster_detector_ids[c]
 
-    // Phase 2: spanning forest
-    std::vector<std::vector<int>> spanning_forest;
-    std::vector<std::vector<int>> forest_access;
+    // Phase 2: spanning forest (sparse)
+    std::vector<SparseStateMap> spanning_forest;
+    std::vector<SparseStateMap> forest_access;
 
     // Phase 3: peeling
     std::vector<int> edge_corrections;
@@ -61,19 +62,14 @@ private:
     int n_nodes_;
     int n_edges_;
     int n_clusters_;
-    std::vector<std::vector<int>> adjacency_;
     std::vector<std::vector<std::pair<int,int>>> adj_list_; // adj_list_[node] = [(neighbor, edge_idx), ...]
 
     DecoderSnapshot snapshot_;
     SyndromeSubPhase syndrome_sub_phase_;
 
-    // Spanning forest construction state
-    int sf_current_cluster_;
-
-    // Peeling state
-    int peel_current_tree_;
+    // Peeling state (one leaf stack per tree for parallel peeling)
     std::vector<int> peel_defects_;
-    std::vector<int> peel_leaf_stack_;
+    std::vector<std::vector<int>> peel_leaf_stacks_;
 
     void init_syndrome_validation();
     void init_spanning_forest();
@@ -84,7 +80,6 @@ private:
     bool step_forest_peeling();
 
     bool has_active_clusters() const;
-    void advance_to_next_nonempty_tree();
 };
 
 #endif // DECODER_STEPPER_H

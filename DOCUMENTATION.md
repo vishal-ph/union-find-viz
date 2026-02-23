@@ -26,7 +26,7 @@
 
 This is an **interactive 3D visualizer** for the Union-Find quantum error decoder. Given a quantum circuit description (a `.dem` file) and a set of measurement errors (a detection events file), it:
 
-1. Parses the **detector error model (DEM)** to reconstruct the decoding graph.
+1. Parses the **detector error model (DEM)** to construct the decoding graph.
 2. Loads the **syndrome** — a binary vector of which detectors fired.
 3. Runs the **Union-Find decoder** algorithm phase by phase, letting you step through it one action at a time.
 4. Renders everything in **3D** using Raylib: the lattice faces, detector nodes, growing clusters, spanning trees, and finally the correction edges.
