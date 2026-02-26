@@ -74,15 +74,24 @@ function onGraphLoaded() {
 // File loading
 // ============================================================
 
-async function loadDemoFiles() {
+const PRESETS = [
+    { dem: 'data/d3_r3.dem',   events: 'data/d3_r3_events.txt'   },
+    { dem: 'data/d5_r5.dem',   events: 'data/d5_r5_events.txt'   },
+    { dem: 'data/d7_r7.dem',   events: 'data/d7_r7_events.txt'   },
+    { dem: 'data/d9_r9.dem',   events: 'data/d9_r9_events.txt'   },
+    { dem: 'data/d25_r10.dem', events: 'data/d25_r10_events.txt' },
+];
+
+async function loadPreset(idx) {
+    const preset = PRESETS[idx];
     try {
         const [demResponse, eventsResponse] = await Promise.all([
-            fetch('/data/test.dem'),
-            fetch('/data/test_events.txt')
+            fetch(preset.dem),
+            fetch(preset.events)
         ]);
 
         if (!demResponse.ok || !eventsResponse.ok) {
-            throw new Error('HTTP error');
+            throw new Error('HTTP error loading preset files');
         }
 
         const demContent = await demResponse.text();
@@ -91,8 +100,8 @@ async function loadDemoFiles() {
         wasmModule.loadDemContent(demContent, eventsContent);
         onGraphLoaded();
     } catch (err) {
-        console.error('Failed to load demo files:', err);
-        alert('Failed to load demo files. Make sure you are serving from the project root.');
+        console.error('Failed to load preset:', err);
+        alert('Failed to load preset files.');
     }
 }
 
@@ -117,79 +126,6 @@ function handleFiles(files) {
         wasmModule.loadDemContent(demContent, eventsContent);
         onGraphLoaded();
     });
-}
-
-// ============================================================
-// Generate circuit via server
-// ============================================================
-
-async function generateAndLoad() {
-    const distanceEl = document.getElementById('gen-distance');
-    const roundsEl = document.getElementById('gen-rounds');
-    const pEl = document.getElementById('gen-p');
-    const statusEl = document.getElementById('generate-status');
-    const errorEl = document.getElementById('generate-error');
-    const btnGenerate = document.getElementById('btn-generate');
-
-    const distance = parseInt(distanceEl.value, 10);
-    const rounds = parseInt(roundsEl.value, 10);
-    const p = parseFloat(pEl.value);
-
-    // Client-side validation
-    if (isNaN(distance) || distance < 3 || distance > 50) {
-        errorEl.textContent = 'Distance must be between 3 and 50';
-        errorEl.classList.add('visible');
-        return;
-    }
-    if (isNaN(rounds) || rounds < 1 || rounds > 100) {
-        errorEl.textContent = 'Rounds must be between 1 and 100';
-        errorEl.classList.add('visible');
-        return;
-    }
-    if (isNaN(p) || p <= 0 || p >= 1) {
-        errorEl.textContent = 'Error rate must be between 0 and 1 (exclusive)';
-        errorEl.classList.add('visible');
-        return;
-    }
-
-    // Show spinner, hide error
-    errorEl.classList.remove('visible');
-    statusEl.classList.add('visible');
-    btnGenerate.disabled = true;
-
-    try {
-        const resp = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ distance, rounds, p })
-        });
-
-        const text = await resp.text();
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch {
-            throw new Error(
-                resp.ok
-                    ? 'Server returned invalid JSON'
-                    : `Server error (${resp.status}). Is py/server.py running?`
-            );
-        }
-
-        if (!resp.ok) {
-            throw new Error(data.error || `Server error (${resp.status})`);
-        }
-
-        wasmModule.loadDemContent(data.dem, data.events);
-        onGraphLoaded();
-    } catch (err) {
-        console.error('Generate failed:', err);
-        errorEl.textContent = err.message;
-        errorEl.classList.add('visible');
-    } finally {
-        statusEl.classList.remove('visible');
-        btnGenerate.disabled = false;
-    }
 }
 
 // ============================================================
@@ -221,15 +157,11 @@ function resetGraph() {
     document.getElementById('phase-section').classList.add('hidden');
     document.getElementById('phase-details').innerHTML = '';
 
-    // Reset loading screen buttons
-    const btnDemo = document.getElementById('btn-load-demo');
-    btnDemo.disabled = false;
-    btnDemo.textContent = 'Load Demo';
-
-    // Reset generate UI
-    document.getElementById('generate-error').classList.remove('visible');
-    document.getElementById('generate-status').classList.remove('visible');
-    document.getElementById('btn-generate').disabled = false;
+    // Re-enable preset buttons
+    document.querySelectorAll('.preset-card').forEach(btn => {
+        btn.disabled = false;
+        btn.style.opacity = '';
+    });
 
     // Reset inspector
     document.getElementById('inspector-content').innerHTML =
@@ -297,27 +229,15 @@ async function init() {
         handleFiles(e.target.files);
     });
 
-    // Load demo button
-    document.getElementById('btn-load-demo').addEventListener('click', async () => {
-        document.getElementById('btn-load-demo').disabled = true;
-        document.getElementById('btn-load-demo').textContent = 'Loading...';
-        await loadDemoFiles();
-    });
-
-    // Generate button
-    document.getElementById('btn-generate').addEventListener('click', () => {
-        generateAndLoad();
-    });
-
-    // Enter key in generate inputs
-    for (const id of ['gen-distance', 'gen-rounds', 'gen-p']) {
-        document.getElementById(id).addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                generateAndLoad();
-            }
+    // Preset card buttons
+    document.querySelectorAll('.preset-card').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const idx = parseInt(btn.dataset.preset, 10);
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            await loadPreset(idx);
         });
-    }
+    });
 
     // New Graph button
     document.getElementById('btn-new-graph').addEventListener('click', () => {

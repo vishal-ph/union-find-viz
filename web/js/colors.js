@@ -1,16 +1,16 @@
 // Cluster palette: 10 harmonious colors matching the C++ renderer
 // Adjusted brighter for dark background
 export const CLUSTER_COLORS = [
-    [0.31, 0.71, 0.75],  // teal
-    [0.35, 0.59, 0.86],  // steel blue
-    [0.51, 0.47, 0.82],  // soft indigo
-    [0.69, 0.39, 0.76],  // orchid
-    [0.82, 0.37, 0.59],  // mauve
-    [0.90, 0.47, 0.35],  // coral
-    [0.86, 0.63, 0.24],  // amber
-    [0.55, 0.73, 0.35],  // olive green
-    [0.37, 0.76, 0.57],  // mint
-    [0.63, 0.51, 0.78],  // lavender
+    [0.24, 0.77, 0.82],  // teal
+    [0.29, 0.59, 0.92],  // steel blue
+    [0.47, 0.42, 0.87],  // soft indigo
+    [0.73, 0.33, 0.82],  // orchid
+    [0.88, 0.31, 0.59],  // mauve
+    [0.96, 0.44, 0.29],  // coral
+    [0.93, 0.65, 0.17],  // amber
+    [0.55, 0.80, 0.28],  // olive green
+    [0.31, 0.83, 0.57],  // mint
+    [0.62, 0.46, 0.83],  // lavender
 ];
 
 export function getClusterColor(index) {

@@ -34,39 +34,38 @@
             <div id="loading-screen">
                 <div class="loading-content">
                     <h1>Union-Find Decoder</h1>
-                    <p>3D Visualization</p>
+                    <p class="loading-subtitle">3D Visualization</p>
+                    <p class="loading-section-label">Choose a preset</p>
+                    <div class="preset-grid">
+                        <button class="preset-card" data-preset="0">
+                            <span class="preset-d">d = 3</span>
+                            <span class="preset-meta">3 rounds · p = 1%</span>
+                        </button>
+                        <button class="preset-card" data-preset="1">
+                            <span class="preset-d">d = 5</span>
+                            <span class="preset-meta">5 rounds · p = 0.5%</span>
+                        </button>
+                        <button class="preset-card" data-preset="2">
+                            <span class="preset-d">d = 7</span>
+                            <span class="preset-meta">7 rounds · p = 0.5%</span>
+                        </button>
+                        <button class="preset-card" data-preset="3">
+                            <span class="preset-d">d = 9</span>
+                            <span class="preset-meta">9 rounds · p = 0.1%</span>
+                        </button>
+                        <button class="preset-card preset-card-large" data-preset="4">
+                            <span class="preset-d">d = 25</span>
+                            <span class="preset-meta">10 rounds · p = 0.05%</span>
+                        </button>
+                    </div>
+                    <div class="loading-divider-row"><span>or load your own</span></div>
                     <div class="loading-actions">
-                        <button id="btn-load-demo" class="btn btn-primary">Load Demo</button>
-                        <span class="loading-divider">or</span>
                         <label class="btn btn-secondary" id="file-upload-label">
                             Load Files
                             <input type="file" id="file-input" multiple accept=".dem,.txt" style="display:none">
                         </label>
                     </div>
-                    <div class="loading-divider-row"><span>or generate</span></div>
-                    <div class="generate-section">
-                        <div class="generate-inputs">
-                            <div class="input-group">
-                                <label for="gen-distance">Distance</label>
-                                <input type="number" id="gen-distance" value="25" min="3" max="50" step="2">
-                            </div>
-                            <div class="input-group">
-                                <label for="gen-rounds">Rounds</label>
-                                <input type="number" id="gen-rounds" value="10" min="1" max="100">
-                            </div>
-                            <div class="input-group">
-                                <label for="gen-p">Error rate</label>
-                                <input type="number" id="gen-p" value="0.0005" min="0.0001" max="0.5" step="0.0001">
-                            </div>
-                        </div>
-                        <button id="btn-generate" class="btn btn-primary">Generate &amp; Load</button>
-                        <div id="generate-status">
-                            <span class="spinner"></span>
-                            <span id="generate-status-text">Generating circuit...</span>
-                        </div>
-                        <div id="generate-error"></div>
-                    </div>
-                    <p class="hint">You can also drag &amp; drop .dem + events files</p>
+                    <p class="hint">Drag &amp; drop .dem + events files anywhere</p>
                 </div>
             </div>
         </div>
@@ -74,6 +73,12 @@
         <div id="panel">
             <div class="panel-section">
                 <h2 class="panel-title">UNION-FIND DECODER</h2>
+            </div>
+            <div class="panel-divider"></div>
+
+            <!-- New Graph / Home -->
+            <div class="panel-section">
+                <button id="btn-new-graph" class="btn btn-full">&#8592; New Graph</button>
             </div>
             <div class="panel-divider"></div>
 
@@ -110,9 +115,6 @@
                     <button id="btn-slower" class="btn btn-tiny">-</button>
                     <span id="speed-display" class="stat-value">0.5s</span>
                     <button id="btn-faster" class="btn btn-tiny">+</button>
-                </div>
-                <div class="btn-row" style="margin-top: 4px;">
-                    <button id="btn-new-graph" class="btn btn-small">N New Graph</button>
                 </div>
             </div>
             <div class="panel-divider"></div>

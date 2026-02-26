@@ -229,11 +229,16 @@ export class Renderer {
     _buildLatticeUnderlay() {
         this._clearGroup(this.latticeGroup);
         const graph = this.graph;
+        const lattice_z = -0.5; // slightly behind detector nodes
         if (!graph || !graph.lattice || !graph.lattice.valid) return;
 
         const lat = graph.lattice;
+        const midX = (lat.minX + lat.maxX) / 2;
+        const midY = (lat.minY + lat.maxY) / 2;
 
-        // Draw lattice once at z=0 (identical across rounds in a memory experiment)
+        // Draw lattice once at z=-1(identical across rounds in a memory experiment)
+        // slightly offset plane to provide as reference background for the spatial plane
+        
         for (const face of lat.faces) {
             const cx = face.centerX * SPATIAL_SCALE;
             const cy = face.centerY * SPATIAL_SCALE;
@@ -243,38 +248,89 @@ export class Renderer {
             const fillColor = face.isXType ? 0xdc7878 : 0x7878dc;
             const edgeColor = face.isXType ? 0xc86464 : 0x6464c8;
 
-            const planeGeo = new THREE.PlaneGeometry(hw * 2, hh * 2);
             const fillMat = new THREE.MeshBasicMaterial({
-                color: fillColor,
-                transparent: true,
-                opacity: 0.26,
-                side: THREE.DoubleSide,
-                depthWrite: false
+                color: fillColor, transparent: true, opacity: 0.26,
+                side: THREE.DoubleSide, depthWrite: false
             });
-            const plane = new THREE.Mesh(planeGeo, fillMat);
-            plane.position.set(cx, cy, 0);
-            this.latticeGroup.add(plane);
-
-            // Outline
-            const outlinePoints = [
-                cx - hw, cy - hh, 0,
-                cx + hw, cy - hh, 0,
-                cx + hw, cy - hh, 0,
-                cx + hw, cy + hh, 0,
-                cx + hw, cy + hh, 0,
-                cx - hw, cy + hh, 0,
-                cx - hw, cy + hh, 0,
-                cx - hw, cy - hh, 0
-            ];
-            const outGeo = new THREE.BufferGeometry();
-            outGeo.setAttribute('position', new THREE.Float32BufferAttribute(outlinePoints, 3));
             const outMat = new THREE.LineBasicMaterial({
-                color: edgeColor,
-                transparent: true,
-                opacity: 0.4,
-                depthWrite: false
+                color: edgeColor, transparent: true, opacity: 0.4, depthWrite: false
             });
-            this.latticeGroup.add(new THREE.LineSegments(outGeo, outMat));
+
+            const isBoundary = face.halfW < 0.9 || face.halfH < 0.9;
+
+            if (!isBoundary) {
+                // Interior face: square
+                const plane = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, hh * 2), fillMat);
+                plane.position.set(cx, cy, lattice_z);
+                this.latticeGroup.add(plane);
+
+                const op = [
+                    cx - hw, cy - hh, lattice_z,  cx + hw, cy - hh, lattice_z,
+                    cx + hw, cy - hh, lattice_z,  cx + hw, cy + hh, lattice_z,
+                    cx + hw, cy + hh, lattice_z,  cx - hw, cy + hh, lattice_z,
+                    cx - hw, cy + hh, lattice_z,  cx - hw, cy - hh, lattice_z,
+                ];
+                const outGeo = new THREE.BufferGeometry();
+                outGeo.setAttribute('position', new THREE.Float32BufferAttribute(op, 3));
+                this.latticeGroup.add(new THREE.LineSegments(outGeo, outMat));
+            } else {
+                // Boundary face: semicircle with flat edge on the lattice boundary,
+                // arc opening inward. Arc is centred on the flat edge.
+                let acx, acy, r, shape;
+
+                if (face.halfW < 0.9) {
+                    // Left or right edge — flat edge is vertical, radius = hh
+                    r = hh;
+                    if (face.centerX < midX) {
+                        // Left: arc opens right
+                        acx = cx + hw; acy = cy;
+                        shape = new THREE.Shape();
+                        shape.moveTo(0, r);
+                        shape.lineTo(0, -r);
+                        shape.absarc(0, 0, r, -Math.PI / 2, Math.PI / 2, true);
+                    } else {
+                        // Right: arc opens left
+                        acx = cx - hw; acy = cy;
+                        shape = new THREE.Shape();
+                        shape.moveTo(0, r);
+                        shape.lineTo(0, -r);
+                        shape.absarc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
+                    }
+                } else {
+                    // Top or bottom edge — flat edge is horizontal, radius = hw
+                    r = hw;
+                    if (face.centerY < midY) {
+                        // Bottom: arc opens up
+                        acx = cx; acy = cy + hh;
+                        shape = new THREE.Shape();
+                        shape.moveTo(r, 0);
+                        shape.lineTo(-r, 0);
+                        shape.absarc(0, 0, r, Math.PI, 0, false);
+                    } else {
+                        // Top: arc opens down
+                        acx = cx; acy = cy - hh;
+                        shape = new THREE.Shape();
+                        shape.moveTo(-r, 0);
+                        shape.lineTo(r, 0);
+                        shape.absarc(0, 0, r, 0, Math.PI, false);
+                    }
+                }
+
+                const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), fillMat);
+                mesh.position.set(acx, acy, lattice_z);
+                this.latticeGroup.add(mesh);
+
+                // Outline: sample the shape perimeter as a connected line
+                const pts = shape.getPoints(24);
+                const pos = [];
+                for (const p of pts) pos.push(p.x, p.y, lattice_z);
+                pos.push(pts[0].x, pts[0].y, lattice_z);  // close loop
+                const outGeo = new THREE.BufferGeometry();
+                outGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+                const outLine = new THREE.Line(outGeo, outMat);
+                outLine.position.set(acx, acy, 0);
+                this.latticeGroup.add(outLine);
+            }
         }
     }
 
@@ -342,9 +398,14 @@ export class Renderer {
         const n = graph.numDetectors;
 
         // Create InstancedMesh for detectors
-        const mat = new THREE.MeshPhongMaterial({ vertexColors: false });
+        const mat = new THREE.MeshStandardMaterial({
+            vertexColors: false,
+            metalness: 0.4,
+            roughness: 0.35
+        });
         const mesh = new THREE.InstancedMesh(this.sphereGeo, mat, n);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.castShadow = true;
 
         const dummy = new THREE.Object3D();
         const color = new THREE.Color();
