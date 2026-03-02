@@ -20,10 +20,8 @@ export class Scene {
         this.camera.position.set(15, 15, 15);
 
         this.scene = new THREE.Scene();
-        this.scene.fog = new THREE.FogExp2(0x060610, 0.008);
-
-        // Lighting — dim ambient so point lights stand out
-        const ambient = new THREE.AmbientLight(0x1a1a2e, 1.0);
+        // Lighting
+        const ambient = new THREE.AmbientLight(0x3a3a5a, 1.5);
         this.scene.add(ambient);
 
         // Cool key light (blue-white)
@@ -42,20 +40,6 @@ export class Scene {
         dir2.position.set(-10, -8, -10);
         this.scene.add(dir2);
 
-        // Animated colored point lights
-        this._pt1 = new THREE.PointLight(0x3a7fff, 3.5, 60, 1.5);
-        this._pt2 = new THREE.PointLight(0xc040ff, 2.5, 50, 1.5);
-        this._pt3 = new THREE.PointLight(0x00e5cc, 2.0, 55, 1.5);
-        this.scene.add(this._pt1, this._pt2, this._pt3);
-
-        this._lightTime = 0;
-
-        // Reflective floor
-        this._addFloor();
-
-        // Star field
-        this._addStars();
-
         // Controls
         this.controls = new OrbitControls(this.camera, canvas);
         this.controls.enableDamping = true;
@@ -67,56 +51,6 @@ export class Scene {
 
         this.handleResize();
         window.addEventListener('resize', () => this.handleResize());
-    }
-
-    _addFloor() {
-        // Large dark reflective plane below the graph
-        const geo = new THREE.PlaneGeometry(300, 300);
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0x080818,
-            metalness: 0.9,
-            roughness: 0.25,
-            transparent: true,
-            opacity: 0.85,
-            depthWrite: false
-        });
-        const floor = new THREE.Mesh(geo, mat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.y = -6;
-        floor.receiveShadow = true;
-        this.scene.add(floor);
-
-        // Subtle grid on top of the floor
-        const grid = new THREE.GridHelper(200, 60, 0x1a2a4a, 0x0e1828);
-        grid.position.y = -5.98;
-        grid.material.transparent = true;
-        grid.material.opacity = 0.35;
-        this.scene.add(grid);
-    }
-
-    _addStars() {
-        const count = 3000;
-        const pos = new Float32Array(count * 3);
-        const sizes = new Float32Array(count);
-        for (let i = 0; i < count; i++) {
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos(2 * Math.random() - 1);
-            const r = 160 + Math.random() * 40;
-            pos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-            pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-            pos[i * 3 + 2] = r * Math.cos(phi);
-            sizes[i] = 0.4 + Math.random() * 0.9;
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        const mat = new THREE.PointsMaterial({
-            color: 0xd0d8ff,
-            size: 0.6,
-            sizeAttenuation: true,
-            transparent: true,
-            opacity: 0.75
-        });
-        this.scene.add(new THREE.Points(geo, mat));
     }
 
     handleResize() {
@@ -190,25 +124,6 @@ export class Scene {
                 t * 0.08
             );
         }
-
-        // Slowly orbit the three colored point lights around the scene center
-        this._lightTime += 0.004;
-        const r1 = 28, r2 = 22, r3 = 25;
-        this._pt1.position.set(
-            r1 * Math.cos(this._lightTime),
-            12 + 6 * Math.sin(this._lightTime * 0.7),
-            r1 * Math.sin(this._lightTime)
-        );
-        this._pt2.position.set(
-            r2 * Math.cos(this._lightTime + Math.PI * 2 / 3),
-            8 + 5 * Math.sin(this._lightTime * 0.5 + 1),
-            r2 * Math.sin(this._lightTime + Math.PI * 2 / 3)
-        );
-        this._pt3.position.set(
-            r3 * Math.cos(this._lightTime + Math.PI * 4 / 3),
-            10 + 4 * Math.sin(this._lightTime * 0.9 + 2),
-            r3 * Math.sin(this._lightTime + Math.PI * 4 / 3)
-        );
 
         this.controls.update();
     }
