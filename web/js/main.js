@@ -2,6 +2,7 @@ import { Scene } from './scene.js';
 import { Renderer } from './renderer.js';
 import { UIController } from './ui-controller.js';
 import { Interaction } from './interaction.js';
+import { initVisitorCounter, setHomepageVisible } from './visitor-counter.js';
 
 let scene, vizRenderer, uiController, interaction;
 let wasmModule = null;
@@ -36,6 +37,7 @@ function onGraphLoaded() {
     document.getElementById('layers-section').classList.remove('hidden');
     document.getElementById('inspector-section').classList.remove('hidden');
     document.getElementById('legend-section').classList.remove('hidden');
+    setHomepageVisible(false);
 
     // Update stats
     document.getElementById('stat-detectors').textContent = graphData.numDetectors;
@@ -156,6 +158,7 @@ function resetGraph() {
     document.getElementById('legend-section').classList.add('hidden');
     document.getElementById('phase-section').classList.add('hidden');
     document.getElementById('phase-details').innerHTML = '';
+    setHomepageVisible(true);
 
     // Re-enable preset buttons
     document.querySelectorAll('.preset-card').forEach(btn => {
@@ -218,6 +221,9 @@ function animate(timestamp) {
 // ============================================================
 
 async function init() {
+    // Load the homepage visitor counter independently of WASM/graph setup.
+    initVisitorCounter();
+
     const canvas = document.getElementById('viewport');
     scene = new Scene(canvas);
     vizRenderer = new Renderer(scene.scene);

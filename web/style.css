@@ -518,3 +518,19 @@ body {
         padding: 12px 10px;
     }
 }
+
+/* Visitor counter — anchored to the bottom of the panel, homepage only */
+#visitor-counter {
+    margin-top: auto;          /* push to bottom of the flex-column panel */
+    padding-top: 12px;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--text-muted, #8888aa);
+    opacity: 0.75;
+    text-align: center;
+    user-select: none;
+}
+
+#visitor-counter.hidden {
+    display: none;
+}
